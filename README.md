@@ -6,7 +6,8 @@
 
 ![image alt](https://github.com/Sameekshavermaa/Focus-guard/blob/86318a61aa1d15e1b9a74a4752996bff0dad9219/11.png)
 ![image alt](https://github.com/Sameekshavermaa/Focus-guard/blob/417df00344228e1243a1423b6d2b96f14ffda498/12.png)
-![image alt](https://github.com/Sameekshavermaa/Focus-guard/blob/30d46f72631e8554b0c75565d510c960aaf69967/Screenshot%202026-03-22%20at%2016.12.42.png)
+![image alt]()
+![image alt]()
 
 ---
 
