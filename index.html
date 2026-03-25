@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FocusGuard — Anti Doom Scroll</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ─── Design Tokens ─── */
+  :root {
+    --bg: #08080f;
+    --surface: #10101c;
+    --border: #1e1e32;
+    --accent: #00ffe0;
+    --accent-dim: #00ffe022;
+    --danger: #ff3b6b;
+    --danger-dim: #ff3b6b22;
+    --warn: #ffb800;
+    --text: #e8e8f0;
+    --muted: #5a5a7a;
+    --focused-color: #00ffe0;
+    --distracted-color: #ff3b6b;
+    --font-display: 'Syne', sans-serif;
+    --font-mono: 'Space Mono', monospace;
+    --r: 12px;
+    --r-sm: 6px;
+    --transition: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    overflow: hidden;
+  }
+
+  /* ─── Grain overlay ─── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 9999; opacity: 0.5;
+  }
+
+  /* ─── Screens ─── */
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity var(--transition), transform var(--transition); }
+  .screen.hidden { opacity: 0; pointer-events: none; transform: scale(0.97); }
+
+  /* ══════════════════════════════════
+     CALIBRATION SCREEN
+  ══════════════════════════════════ */
+  #calibration-screen {
+    background: var(--bg);
+    gap: 32px;
+    padding: 32px;
+  }
+
+  .logo {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(28px, 5vw, 44px);
+    letter-spacing: -1px;
+    color: var(--accent);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .logo-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); animation: pulse-dot 2s ease-in-out infinite; }
+  @keyframes pulse-dot { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.4);opacity:.6} }
+
+  .tagline {
+    font-family: var(--font-display);
+    font-size: clamp(13px, 2vw, 16px);
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .calibration-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 36px 40px;
+    max-width: 560px;
+    width: 100%;
+    display: flex; flex-direction: column; gap: 28px;
+  }
+
+  .calibration-card h2 {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .setting-row {
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .setting-label {
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .setting-label span { color: var(--accent); font-size: 13px; }
+
+  input[type="range"] {
+    width: 100%; accent-color: var(--accent);
+    height: 4px; cursor: pointer;
+  }
+
+  .file-drop {
+    border: 2px dashed var(--border);
+    border-radius: var(--r-sm);
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color var(--transition), background var(--transition);
+    font-size: 13px;
+    color: var(--muted);
+    position: relative;
+  }
+  .file-drop:hover, .file-drop.has-file {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+  .file-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+
+  .start-btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: var(--r-sm);
+    padding: 14px 28px;
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: opacity var(--transition), transform var(--transition), box-shadow var(--transition);
+    box-shadow: 0 0 24px #00ffe055;
+  }
+  .start-btn:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 0 36px #00ffe077; }
+  .start-btn:disabled { opacity: 0.4; pointer-events: none; }
+  .start-btn:active { transform: translateY(0); }
+
+  .perm-note { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.6; }
+  .perm-note a { color: var(--accent); text-decoration: none; }
+
+  /* ══════════════════════════════════
+     MAIN APP SCREEN
+  ══════════════════════════════════ */
+  #app-screen {
+    background: var(--bg);
+    flex-direction: row;
+    align-items: stretch;
+    padding: 0;
+    gap: 0;
+  }
+
+  /* Left panel — webcam + face box */
+  .cam-panel {
+    width: 50%;
+    min-width: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    gap: 12px;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+
+  .cam-panel-title {
+    font-family: var(--font-display);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--muted);
+  }
+
+  .cam-wrapper {
+    position: relative;
+    border-radius: var(--r-sm);
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 4/3;
+    flex-shrink: 0;
+  }
+  #webcam {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+    transform: scaleX(-1);
+  }
+  #face-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    transform: scaleX(-1);
+    pointer-events: none;
+  }
+
+  .cam-status-bar {
+    position: absolute; bottom: 8px; left: 8px; right: 8px;
+    display: flex; gap: 6px;
+  }
+  .cam-badge {
+    font-size: 10px; font-family: var(--font-mono);
+    padding: 3px 8px; border-radius: 100px;
+    background: #00000099; backdrop-filter: blur(4px);
+    letter-spacing: 0.5px;
+  }
+  .cam-badge.live { color: var(--accent); border: 1px solid #00ffe044; }
+  .cam-badge.fps { color: var(--muted); border: 1px solid var(--border); }
+
+  /* Status card */
+  .status-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 10px 14px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+
+  .status-label {
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
+  }
+
+  .status-value {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+    transition: color 0.3s;
+  }
+  .status-value.focused { color: var(--focused-color); }
+  .status-value.distracted { color: var(--distracted-color); }
+  .status-value.no-face { color: var(--warn); }
+
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .status-dot.focused { background: var(--focused-color); box-shadow: 0 0 8px var(--focused-color); }
+  .status-dot.distracted { background: var(--distracted-color); box-shadow: 0 0 8px var(--distracted-color); animation: blink-red 1s ease-in-out infinite; }
+  .status-dot.no-face { background: var(--warn); }
+  @keyframes blink-red { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* Away timer */
+  .away-timer-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 10px 14px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+
+  .timer-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+
+  .timer-display {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text);
+    transition: color 0.3s;
+    letter-spacing: -1px;
+  }
+  .timer-display.warning { color: var(--warn); }
+  .timer-display.critical { color: var(--danger); animation: blink-timer 0.5s ease-in-out infinite; }
+  @keyframes blink-timer { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+  .timer-bar-track {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .timer-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.3s linear, background 0.3s;
+    background: var(--focused-color);
+  }
+  .timer-bar-fill.warning { background: var(--warn); }
+  .timer-bar-fill.critical { background: var(--danger); }
+
+  /* Stats */
+  .stats-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .stat-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 8px 10px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .stat-box-label { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+  .stat-box-value { font-family: var(--font-display); font-size: 14px; font-weight: 700; color: var(--text); }
+
+  /* Sensitivity */
+  .sens-row {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px;
+  }
+  .sens-row-label { color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .sens-toggle {
+    display: flex; gap: 4px;
+  }
+  .sens-btn {
+    background: var(--border);
+    border: none; border-radius: 4px;
+    padding: 4px 10px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+  }
+  .sens-btn.active { background: var(--accent); color: #000; }
+
+  /* Right panel — main content */
+  .content-panel {
+    width: 50%;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    gap: 16px;
+    overflow: hidden;
+  }
+
+  .content-header {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .content-logo {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 13px;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+  }
+  .content-logo span { color: var(--muted); font-weight: 400; }
+
+  .header-actions { display: flex; gap: 10px; }
+
+  .icon-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 8px 14px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: color var(--transition), border-color var(--transition);
+    white-space: nowrap;
+  }
+  .icon-btn:hover { color: var(--text); border-color: var(--accent); }
+
+  /* Focus zone — placeholder "scrollable" content */
+  .focus-zone {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .focus-zone-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .focus-zone-body {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+
+  /* Simulated article content */
+  .article-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 20px;
+    display: flex; gap: 16px;
+    transition: border-color var(--transition);
+    cursor: default;
+  }
+  .article-card:hover { border-color: var(--accent); }
+  .article-thumb {
+    width: 80px; height: 60px; flex-shrink: 0;
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--border) 0%, #1a1a2e 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+  }
+  .article-content { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .article-tag { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); }
+  .article-title { font-family: var(--font-display); font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.4; }
+  .article-meta { font-size: 11px; color: var(--muted); }
+
+  /* Bottom bar */
+  .bottom-bar {
+    display: flex; gap: 12px; align-items: center;
+  }
+  .alert-bar {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 10px 16px;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex; align-items: center; gap: 8px;
+    transition: border-color 0.3s, background 0.3s;
+  }
+  .alert-bar.warn { border-color: var(--warn); background: #ffb80011; color: var(--warn); }
+  .alert-bar.danger { border-color: var(--danger); background: var(--danger-dim); color: var(--danger); }
+  #alert-text { transition: color 0.3s; }
+
+  /* ══════════════════════════════════
+     INTERVENTION OVERLAY
+  ══════════════════════════════════ */
+  #intervention-overlay {
+    background: #000;
+    z-index: 1000;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .intervention-header {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 16px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    z-index: 10;
+    background: linear-gradient(to bottom, #000000cc, transparent);
+  }
+
+  .intervention-logo {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 18px;
+    color: var(--accent);
+  }
+
+  .intervention-msg {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    letter-spacing: 1px;
+  }
+
+  .dismiss-btn {
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: var(--r-sm);
+    padding: 8px 18px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+    letter-spacing: 0.5px;
+  }
+  .dismiss-btn:hover { background: var(--accent); color: #000; }
+
+  #intervention-video {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .no-video-placeholder {
+    display: flex; flex-direction: column; align-items: center; gap: 24px; text-align: center;
+    padding: 40px;
+  }
+  .no-video-placeholder .icon { font-size: 64px; }
+  .no-video-placeholder h2 { font-family: var(--font-display); font-size: 28px; color: var(--accent); }
+  .no-video-placeholder p { color: var(--muted); font-size: 14px; line-height: 1.8; max-width: 400px; }
+  .no-video-placeholder .breathing {
+    width: 80px; height: 80px; border-radius: 50%;
+    border: 2px solid var(--accent);
+    box-shadow: 0 0 32px var(--accent);
+    animation: breathe 4s ease-in-out infinite;
+  }
+  @keyframes breathe { 0%,100%{transform:scale(1);opacity:.5} 50%{transform:scale(1.4);opacity:1} }
+
+  /* Return gaze bar at bottom of intervention */
+  .return-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(to top, #000000dd, transparent);
+    padding: 20px 24px;
+    display: flex; align-items: center; gap: 16px;
+    z-index: 10;
+  }
+  .return-bar-label { font-size: 12px; color: var(--muted); font-family: var(--font-mono); white-space: nowrap; }
+  .return-bar-track { flex: 1; height: 4px; background: #ffffff22; border-radius: 2px; overflow: hidden; }
+  .return-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; width: 0%; transition: width 0.3s; box-shadow: 0 0 8px var(--accent); }
+
+  /* ══════════════════════════════════
+     ERROR SCREEN
+  ══════════════════════════════════ */
+  #error-screen { background: var(--bg); gap: 16px; text-align: center; padding: 40px; }
+  #error-screen h2 { font-family: var(--font-display); font-size: 24px; color: var(--danger); }
+  #error-screen p { color: var(--muted); font-size: 14px; max-width: 400px; line-height: 1.8; }
+  #error-screen button { margin-top: 12px; }
+
+  /* ── Permission screen ── */
+  #permission-screen { background: var(--bg); gap: 24px; text-align: center; padding: 40px; }
+  .perm-icon { font-size: 56px; }
+  #permission-screen h2 { font-family: var(--font-display); font-size: 26px; color: var(--text); }
+  #permission-screen p { color: var(--muted); font-size: 14px; max-width: 440px; line-height: 1.8; }
+
+  /* Sound wave visualizer */
+  .sound-alert {
+    position: fixed; bottom: 100px; right: 24px;
+    background: var(--warn);
+    color: #000;
+    border-radius: var(--r-sm);
+    padding: 10px 16px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    z-index: 500;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+  }
+  .sound-alert.visible { opacity: 1; transform: translateY(0); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Permission loading */
+  .spinner {
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- ── Permission waiting screen ── -->
+<div id="permission-screen" class="screen">
+  <div class="perm-icon">📷</div>
+  <h2>Requesting Camera Access</h2>
+  <p>FocusGuard needs webcam access to monitor your attention. Please allow access in the browser prompt.</p>
+  <div class="spinner"></div>
+</div>
+
+<!-- ── Error screen ── -->
+<div id="error-screen" class="screen hidden">
+  <h2>⚠ Camera Access Denied</h2>
+  <p id="error-msg">FocusGuard requires camera permission to work. Please enable camera access in your browser settings and reload the page.</p>
+  <button class="start-btn" onclick="location.reload()">Reload Page</button>
+</div>
+
+<!-- ── Calibration screen ── -->
+<div id="calibration-screen" class="screen hidden">
+  <div class="logo"><div class="logo-dot"></div>FocusGuard</div>
+  <p class="tagline">Attention monitoring · Anti doom scroll</p>
+  <div class="calibration-card">
+    <h2>Settings</h2>
+
+    <div class="setting-row">
+      <div class="setting-label">Away timer threshold — <span id="threshold-val">10</span>s</div>
+      <input type="range" id="threshold-slider" min="5" max="30" value="10" step="1">
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">Detection sensitivity</div>
+      <div class="sens-toggle" id="sens-toggle">
+        <button class="sens-btn" data-val="low">Low</button>
+        <button class="sens-btn active" data-val="medium">Medium</button>
+        <button class="sens-btn" data-val="high">High</button>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">Intervention video (optional)</div>
+      <div class="file-drop" id="file-drop">
+        <input type="file" accept="video/*" id="video-file-input">
+        <span id="file-label">📁 Click or drag a video file here</span>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">Sound alert before intervention</div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--muted)">
+        <input type="checkbox" id="sound-check" checked style="accent-color:var(--accent)">
+        Play beep 3 seconds before video triggers
+      </label>
+    </div>
+
+    <button class="start-btn" id="start-btn">Start FocusGuard →</button>
+    <p class="perm-note">Camera feed stays local. No data is sent anywhere.</p>
+  </div>
+</div>
+
+<!-- ── Main App Screen ── -->
+<div id="app-screen" class="screen hidden">
+  <!-- Left panel: webcam + controls -->
+  <div class="cam-panel">
+    <div class="cam-panel-title">Live Feed</div>
+
+    <div class="cam-wrapper">
+      <video id="webcam" autoplay muted playsinline></video>
+      <canvas id="face-canvas"></canvas>
+      <div class="cam-status-bar">
+        <span class="cam-badge live">● LIVE</span>
+        <span class="cam-badge fps" id="fps-badge">-- fps</span>
+      </div>
+    </div>
+
+    <div class="status-card">
+      <div class="status-label">Attention Status</div>
+      <div class="status-value focused" id="status-value">
+        <div class="status-dot focused" id="status-dot"></div>
+        <span id="status-text">Initializing…</span>
+      </div>
+    </div>
+
+    <div class="away-timer-card">
+      <div class="timer-label">Away Timer</div>
+      <div class="timer-display" id="timer-display">0.0s</div>
+      <div class="timer-bar-track">
+        <div class="timer-bar-fill" id="timer-bar"></div>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-box-label">Session</div>
+        <div class="stat-box-value" id="session-time">00:00</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-box-label">Focus %</div>
+        <div class="stat-box-value" id="focus-pct">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-box-label">Interventions</div>
+        <div class="stat-box-value" id="interventions-count">0</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-box-label">Detections/s</div>
+        <div class="stat-box-value" id="detect-rate">—</div>
+      </div>
+    </div>
+
+    <div class="sens-row">
+      <span class="sens-row-label">Sensitivity</span>
+      <div class="sens-toggle" id="sens-toggle-live">
+        <button class="sens-btn" data-val="low">Lo</button>
+        <button class="sens-btn active" data-val="medium">Md</button>
+        <button class="sens-btn" data-val="high">Hi</button>
+      </div>
+    </div>
+
+    <button class="icon-btn" id="settings-btn" style="font-size:11px">⚙ Settings</button>
+  </div>
+
+  <!-- Right panel: main content -->
+  <div class="content-panel">
+    <div class="content-header">
+      <div class="content-logo">Focus<span>Guard</span></div>
+      <div class="header-actions">
+        <button class="icon-btn" id="upload-video-btn">📹 Change Video</button>
+        <input type="file" accept="video/*" id="video-file-input-live" style="display:none">
+      </div>
+    </div>
+
+    <div class="focus-zone">
+      <div class="focus-zone-header">
+        <span style="color:var(--accent)">●</span>
+        Protected Reading Zone — FocusGuard Active
+      </div>
+      <div class="focus-zone-body" id="article-feed">
+        <!-- Injected by JS -->
+      </div>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="alert-bar" id="alert-bar">
+        <span>🟢</span>
+        <span id="alert-text">All good — stay focused and keep reading.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Intervention Overlay ── -->
+<div id="intervention-overlay" class="screen hidden">
+  <div class="intervention-header">
+    <div class="intervention-logo">FocusGuard</div>
+    <div class="intervention-msg" id="intervention-msg">You looked away for too long.</div>
+    <button class="dismiss-btn" id="dismiss-btn">✓ I'm Back</button>
+  </div>
+
+  <video id="intervention-video" autoplay loop playsinline></video>
+
+  <div class="no-video-placeholder" id="no-video-placeholder" style="display:none">
+    <div class="breathing"></div>
+    <h2>Take a Breath</h2>
+    <p>You've been distracted. Take a moment, breathe, and return your gaze to the screen when you're ready to continue.</p>
+    <p style="color:var(--accent);font-size:12px;letter-spacing:1px">LOOKING BACK WILL DISMISS THIS</p>
+  </div>
+
+  <div class="return-bar">
+    <span class="return-bar-label">Return gaze to dismiss:</span>
+    <div class="return-bar-track">
+      <div class="return-bar-fill" id="return-bar-fill"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Sound alert toast -->
+<div class="sound-alert" id="sound-alert">⚠ Intervention in 3s…</div>
+
+<!-- MediaPipe Face Mesh via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  FocusGuard — Detection Engine
+// ═══════════════════════════════════════════════════════════════
+
+// ─── State ────────────────────────────────────────────────────
+const state = {
+  screen: 'permission',        // permission | calibration | app | intervention | error
+  status: 'no-face',           // focused | distracted | no-face
+  awaySeconds: 0,
+  awayStartTime: null,
+  threshold: 10,
+  sensitivity: 'medium',
+  soundAlert: true,
+  soundPlayed: false,
+  interventionCount: 0,
+  sessionStart: Date.now(),
+  focusTicks: 0,
+  totalTicks: 0,
+  videoURL: null,
+  inIntervention: false,
+  returnGazeTicks: 0,
+  returnGazeNeeded: 15,        // consecutive focused frames needed to dismiss
+  faceMeshReady: false,
+  lastFps: 0,
+  frameCount: 0,
+  fpsTimer: Date.now(),
+  lastDetectionTime: Date.now(),
+  // Debounce: require N consecutive "away" frames before starting timer
+  awayFrames: 0,
+  focusedFrames: 0,
+  debounceFrames: { low: 5, medium: 12, high: 20 },
+  // Head pose tracking (eye landmarks indices in MediaPipe Face Mesh)
+  lastResults: null,
+};
+
+// ─── DOM ──────────────────────────────────────────────────────
+const screens = {
+  permission: document.getElementById('permission-screen'),
+  calibration: document.getElementById('calibration-screen'),
+  app: document.getElementById('app-screen'),
+  intervention: document.getElementById('intervention-overlay'),
+  error: document.getElementById('error-screen'),
+};
+
+const webcamEl = document.getElementById('webcam');
+const faceCanvas = document.getElementById('face-canvas');
+const ctx = faceCanvas.getContext('2d');
+
+// UI refs
+const statusValue = document.getElementById('status-value');
+const statusDot = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+const timerDisplay = document.getElementById('timer-display');
+const timerBar = document.getElementById('timer-bar');
+const fpsBadge = document.getElementById('fps-badge');
+const alertBar = document.getElementById('alert-bar');
+const alertText = document.getElementById('alert-text');
+const sessionTimeEl = document.getElementById('session-time');
+const focusPctEl = document.getElementById('focus-pct');
+const interventionsCountEl = document.getElementById('interventions-count');
+const detectRateEl = document.getElementById('detect-rate');
+const returnBarFill = document.getElementById('return-bar-fill');
+const soundAlertEl = document.getElementById('sound-alert');
+const interventionVideo = document.getElementById('intervention-video');
+const noVideoPlaceholder = document.getElementById('no-video-placeholder');
+const interventionMsg = document.getElementById('intervention-msg');
+
+// ─── Screen transitions ───────────────────────────────────────
+function showScreen(name) {
+  Object.entries(screens).forEach(([k, el]) => {
+    el.classList.toggle('hidden', k !== name);
+  });
+  state.screen = name;
+}
+
+// ─── Calibration UI ──────────────────────────────────────────
+const thresholdSlider = document.getElementById('threshold-slider');
+const thresholdVal = document.getElementById('threshold-val');
+const sensToggle = document.getElementById('sens-toggle');
+const fileDropEl = document.getElementById('file-drop');
+const fileLabel = document.getElementById('file-label');
+const videoFileInput = document.getElementById('video-file-input');
+const soundCheck = document.getElementById('sound-check');
+
+thresholdSlider.addEventListener('input', () => {
+  state.threshold = parseInt(thresholdSlider.value);
+  thresholdVal.textContent = state.threshold;
+});
+
+sensToggle.querySelectorAll('.sens-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    sensToggle.querySelectorAll('.sens-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.sensitivity = btn.dataset.val;
+  });
+});
+
+videoFileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    state.videoURL = URL.createObjectURL(file);
+    fileLabel.textContent = `✅ ${file.name}`;
+    fileDropEl.classList.add('has-file');
+  }
+});
+
+document.getElementById('start-btn').addEventListener('click', startApp);
+soundCheck.addEventListener('change', () => { state.soundAlert = soundCheck.checked; });
+
+// Live settings
+document.getElementById('sens-toggle-live').querySelectorAll('.sens-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('sens-toggle-live').querySelectorAll('.sens-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.sensitivity = btn.dataset.val;
+  });
+});
+
+// Upload video while running
+document.getElementById('upload-video-btn').addEventListener('click', () => {
+  document.getElementById('video-file-input-live').click();
+});
+document.getElementById('video-file-input-live').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) state.videoURL = URL.createObjectURL(file);
+});
+
+document.getElementById('dismiss-btn').addEventListener('click', dismissIntervention);
+document.getElementById('settings-btn').addEventListener('click', () => {
+  // Pause detection and show settings
+  showScreen('calibration');
+  // Pre-fill current values
+  thresholdSlider.value = state.threshold;
+  thresholdVal.textContent = state.threshold;
+});
+
+// ─── Article feed (placeholder content) ──────────────────────
+const articles = [
+  { emoji: '🧠', tag: 'Neuroscience', title: 'How Sustained Focus Rewires Your Brain\'s Reward Pathways', meta: '8 min read · Dr. Sarah Chen' },
+  { emoji: '⏱', tag: 'Productivity', title: 'The Science Behind the 52-17 Focus Interval', meta: '5 min read · James Park' },
+  { emoji: '📵', tag: 'Digital Wellness', title: 'Why Infinite Scroll Is Literally Designed to Break You', meta: '6 min read · Maria Santos' },
+  { emoji: '🌊', tag: 'Flow State', title: 'Achieving Deep Work: A Practical Framework for 2025', meta: '10 min read · Alex Rivers' },
+  { emoji: '💤', tag: 'Sleep Science', title: 'Doom Scrolling Before Bed Costs You More Than Sleep', meta: '4 min read · Dr. Lee Kim' },
+  { emoji: '🎯', tag: 'Habit Design', title: 'Building an Attention Fortress: Protecting Your Focus Capital', meta: '7 min read · Robin Walsh' },
+];
+
+function renderArticles() {
+  const feed = document.getElementById('article-feed');
+  feed.innerHTML = articles.map(a => `
+    <div class="article-card">
+      <div class="article-thumb">${a.emoji}</div>
+      <div class="article-content">
+        <div class="article-tag">${a.tag}</div>
+        <div class="article-title">${a.title}</div>
+        <div class="article-meta">${a.meta}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── MediaPipe Face Mesh setup ────────────────────────────────
+let faceMesh;
+
+function initFaceMesh() {
+  faceMesh = new FaceMesh({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  });
+
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+  });
+
+  faceMesh.onResults(onFaceMeshResults);
+  state.faceMeshReady = true;
+}
+
+// ─── Gaze / head pose estimation ─────────────────────────────
+// Uses MediaPipe Face Mesh landmark indices:
+// Key landmarks for head pose:
+//   1 = nose tip, 33 = left eye outer, 263 = right eye outer
+//   61 = mouth left, 291 = mouth right, 199 = chin
+// Eye landmarks (left): 159 (top), 145 (bottom), 133 (inner), 33 (outer)
+// Eye landmarks (right): 386 (top), 374 (bottom), 362 (inner), 263 (outer)
+
+function estimateGaze(landmarks, canvasW, canvasH) {
+  if (!landmarks || landmarks.length < 400) return null;
+
+  const lm = landmarks;
+
+  // ── Head pose via nose + face width ──
+  const noseTip = lm[1];
+  const leftEyeOuter = lm[33];
+  const rightEyeOuter = lm[263];
+  const chin = lm[199];
+  const forehead = lm[10];
+
+  // Face width ratio: if head is turned left/right nose moves off-center
+  const faceLeft = leftEyeOuter.x;
+  const faceRight = rightEyeOuter.x;
+  const faceCenterX = (faceLeft + faceRight) / 2;
+  const noseOffset = (noseTip.x - faceCenterX) / (faceRight - faceLeft);
+  // noseOffset ~0 = facing forward, +/- > 0.3 = head turned
+
+  // Head vertical tilt: nose Y relative to eye-chin midpoint
+  const eyeMidY = (leftEyeOuter.y + rightEyeOuter.y) / 2;
+  const verticalRange = Math.abs(chin.y - forehead.y);
+  const noseVertical = (noseTip.y - eyeMidY) / (verticalRange || 0.01);
+
+  // ── Eye openness ──
+  function eyeOpenness(topIdx, botIdx) {
+    const top = lm[topIdx], bot = lm[botIdx];
+    return Math.abs(top.y - bot.y);
+  }
+
+  const leftOpenness = eyeOpenness(159, 145);
+  const rightOpenness = eyeOpenness(386, 374);
+  const avgEyeOpen = (leftOpenness + rightOpenness) / 2;
+
+  // Eyes very closed = looking down or sleeping
+  const eyesOpen = avgEyeOpen > 0.008;
+
+  // ── Iris position (refined landmarks) ──
+  // Left iris center: ~468, right iris center: ~473
+  let irisGazeX = 0;
+  if (lm[468] && lm[473]) {
+    const leftIris = lm[468].x;
+    const rightIris = lm[473].x;
+    const leftEyeInner = lm[133].x;
+    const leftEyeOuter2 = lm[33].x;
+    const rightEyeInner = lm[362].x;
+    const rightEyeOuter2 = lm[263].x;
+
+    // Normalized iris position within each eye [-1, 1]
+    const leftEyeGaze = (leftIris - (leftEyeInner + leftEyeOuter2) / 2) /
+                        (Math.abs(leftEyeInner - leftEyeOuter2) / 2 || 0.01);
+    const rightEyeGaze = (rightIris - (rightEyeInner + rightEyeOuter2) / 2) /
+                         (Math.abs(rightEyeInner - rightEyeOuter2) / 2 || 0.01);
+    irisGazeX = (leftEyeGaze + rightEyeGaze) / 2;
+  }
+
+  // ── Determine looking away ──
+  const sensitivityMap = { low: 0.5, medium: 0.35, high: 0.22 };
+  const headThreshold = sensitivityMap[state.sensitivity];
+
+  const headTurnedH = Math.abs(noseOffset) > headThreshold;
+  const headTiltedDown = noseVertical < 0.05; // nose too high rel to eyes
+  const eyesClosed = !eyesOpen;
+
+  const lookingAway = headTurnedH || headTiltedDown || eyesClosed;
+
+  return {
+    lookingAway,
+    noseOffset,
+    noseVertical,
+    eyesOpen,
+    avgEyeOpen,
+    irisGazeX,
+    headTurnedH,
+    headTiltedDown,
+    noseTip,
+    leftEyeOuter,
+    rightEyeOuter,
+    landmarks,
+  };
+}
+
+// ─── Draw face overlay ────────────────────────────────────────
+function drawFaceOverlay(gazeInfo, canvasW, canvasH) {
+  ctx.clearRect(0, 0, canvasW, canvasH);
+  if (!gazeInfo) return;
+
+  const { landmarks, lookingAway } = gazeInfo;
+
+  // Bounding box from key landmarks
+  let minX = 1, maxX = 0, minY = 1, maxY = 0;
+  const keyIndices = [10, 152, 234, 454, 1, 33, 263];
+  keyIndices.forEach(i => {
+    if (landmarks[i]) {
+      minX = Math.min(minX, landmarks[i].x);
+      maxX = Math.max(maxX, landmarks[i].x);
+      minY = Math.min(minY, landmarks[i].y);
+      maxY = Math.max(maxY, landmarks[i].y);
+    }
+  });
+
+  const pad = 0.04;
+  const x = (minX - pad) * canvasW;
+  const y = (minY - pad) * canvasH;
+  const w = (maxX - minX + pad * 2) * canvasW;
+  const h = (maxY - minY + pad * 2) * canvasH;
+
+  const color = lookingAway ? '#ff3b6b' : '#00ffe0';
+  const glow = lookingAway ? '#ff3b6b66' : '#00ffe066';
+
+  // Draw bounding box with corner brackets style
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = 8;
+
+  const corner = 14;
+
+  ctx.beginPath();
+  // Top-left
+  ctx.moveTo(x, y + corner); ctx.lineTo(x, y); ctx.lineTo(x + corner, y);
+  // Top-right
+  ctx.moveTo(x + w - corner, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + corner);
+  // Bottom-right
+  ctx.moveTo(x + w, y + h - corner); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - corner, y + h);
+  // Bottom-left
+  ctx.moveTo(x + corner, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - corner);
+  ctx.stroke();
+
+  // Center dot on nose
+  if (gazeInfo.noseTip) {
+    const nx = gazeInfo.noseTip.x * canvasW;
+    const ny = gazeInfo.noseTip.y * canvasH;
+    ctx.beginPath();
+    ctx.arc(nx, ny, 3, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  // Status label
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = color + 'cc';
+  ctx.fillRect(x, y - 22, w, 20);
+  ctx.fillStyle = lookingAway ? '#000' : '#000';
+  ctx.font = '10px Space Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(lookingAway ? '⚠ DISTRACTED' : '✓ FOCUSED', x + w / 2, y - 7);
+  ctx.textAlign = 'left';
+}
+
+// ─── Face Mesh results handler ────────────────────────────────
+let detectionCount = 0;
+let detectionTimer = Date.now();
+
+function onFaceMeshResults(results) {
+  state.frameCount++;
+  detectionCount++;
+
+  // FPS counter
+  const now = Date.now();
+  if (now - state.fpsTimer > 1000) {
+    state.lastFps = state.frameCount;
+    state.frameCount = 0;
+    state.fpsTimer = now;
+    fpsBadge.textContent = `${state.lastFps} fps`;
+  }
+
+  // Detection rate
+  if (now - detectionTimer > 1000) {
+    detectRateEl.textContent = detectionCount;
+    detectionCount = 0;
+    detectionTimer = now;
+  }
+
+  const canvasW = faceCanvas.width;
+  const canvasH = faceCanvas.height;
+
+  if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+    // No face detected
+    ctx.clearRect(0, 0, canvasW, canvasH);
+    handleFocusState('no-face');
+    return;
+  }
+
+  const landmarks = results.multiFaceLandmarks[0];
+  const gazeInfo = estimateGaze(landmarks, canvasW, canvasH);
+
+  if (gazeInfo) {
+    drawFaceOverlay(gazeInfo, canvasW, canvasH);
+    handleFocusState(gazeInfo.lookingAway ? 'distracted' : 'focused');
+  }
+}
+
+// ─── Focus state machine ──────────────────────────────────────
+function handleFocusState(newStatus) {
+  const debounce = state.debounceFrames[state.sensitivity];
+  state.totalTicks++;
+
+  if (newStatus === 'focused') {
+    state.focusTicks++;
+    state.awayFrames = 0;
+    state.focusedFrames = Math.min(state.focusedFrames + 1, debounce + 5);
+
+    if (state.focusedFrames >= debounce) {
+      if (state.status !== 'focused') {
+        state.status = 'focused';
+        state.awayStartTime = null;
+        state.awaySeconds = 0;
+        state.soundPlayed = false;
+        updateStatusUI('focused');
+      }
+
+      if (state.inIntervention) {
+        state.returnGazeTicks = Math.min(state.returnGazeTicks + 1, state.returnGazeNeeded);
+        const pct = (state.returnGazeTicks / state.returnGazeNeeded) * 100;
+        returnBarFill.style.width = pct + '%';
+        if (state.returnGazeTicks >= state.returnGazeNeeded) {
+          dismissIntervention();
+        }
+      }
+    }
+  } else {
+    // distracted or no-face
+    state.focusedFrames = 0;
+    state.awayFrames++;
+
+    if (state.awayFrames >= debounce) {
+      if (state.status !== 'distracted' && state.status !== 'no-face') {
+        state.status = newStatus;
+        state.awayStartTime = Date.now();
+        updateStatusUI(newStatus);
+      } else if (state.status !== newStatus) {
+        state.status = newStatus;
+        updateStatusUI(newStatus);
+      }
+    }
+
+    if (state.inIntervention) {
+      state.returnGazeTicks = Math.max(0, state.returnGazeTicks - 2);
+      returnBarFill.style.width = (state.returnGazeTicks / state.returnGazeNeeded * 100) + '%';
+    }
+  }
+
+  updateTimerUI();
+  updateStats();
+}
+
+function updateStatusUI(status) {
+  const labels = { focused: '● Focused', distracted: '⚠ Distracted', 'no-face': '? No Face' };
+  const classes = { focused: 'focused', distracted: 'distracted', 'no-face': 'no-face' };
+
+  statusText.textContent = labels[status];
+  statusValue.className = 'status-value ' + (classes[status] || '');
+  statusDot.className = 'status-dot ' + (classes[status] || '');
+
+  // Alert bar
+  if (status === 'focused') {
+    alertBar.className = 'alert-bar';
+    alertText.textContent = 'All good — stay focused and keep reading.';
+  } else if (status === 'no-face') {
+    alertBar.className = 'alert-bar warn';
+    alertText.textContent = 'No face detected — please position your face in the camera view.';
+  }
+}
+
+function updateTimerUI() {
+  if (state.status === 'focused' || !state.awayStartTime) {
+    timerDisplay.textContent = '0.0s';
+    timerDisplay.className = 'timer-display';
+    timerBar.style.width = '0%';
+    timerBar.className = 'timer-bar-fill';
+    alertBar.className = 'alert-bar';
+    if (state.status === 'focused') {
+      alertText.textContent = 'All good — stay focused and keep reading.';
+    }
+    return;
+  }
+
+  const elapsed = (Date.now() - state.awayStartTime) / 1000;
+  state.awaySeconds = elapsed;
+  const pct = Math.min((elapsed / state.threshold) * 100, 100);
+
+  timerDisplay.textContent = elapsed.toFixed(1) + 's';
+  timerBar.style.width = pct + '%';
+
+  if (elapsed >= state.threshold * 0.9) {
+    timerDisplay.className = 'timer-display critical';
+    timerBar.className = 'timer-bar-fill critical';
+    alertBar.className = 'alert-bar danger';
+    alertText.textContent = '🔴 Attention! Intervention video will trigger immediately.';
+  } else if (elapsed >= state.threshold * 0.6) {
+    timerDisplay.className = 'timer-display warning';
+    timerBar.className = 'timer-bar-fill warning';
+    alertBar.className = 'alert-bar warn';
+    alertText.textContent = `⚠ You have been looking away for ${elapsed.toFixed(1)}s — refocus now!`;
+
+    // Sound alert at threshold - 3s
+    if (state.soundAlert && !state.soundPlayed && elapsed >= state.threshold - 3) {
+      playBeepAlert();
+      state.soundPlayed = true;
+    }
+  } else {
+    timerDisplay.className = 'timer-display';
+    timerBar.className = 'timer-bar-fill';
+    alertBar.className = 'alert-bar warn';
+    alertText.textContent = `⚠ Looking away for ${elapsed.toFixed(1)}s — return your gaze.`;
+  }
+
+  // Trigger intervention
+  if (elapsed >= state.threshold && !state.inIntervention) {
+    triggerIntervention();
+  }
+}
+
+function updateStats() {
+  // Session timer
+  const sessElapsed = Date.now() - state.sessionStart;
+  const m = Math.floor(sessElapsed / 60000);
+  const s = Math.floor((sessElapsed % 60000) / 1000);
+  sessionTimeEl.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+
+  // Focus %
+  if (state.totalTicks > 0) {
+    focusPctEl.textContent = Math.round((state.focusTicks / state.totalTicks) * 100) + '%';
+  }
+
+  interventionsCountEl.textContent = state.interventionCount;
+}
+
+// ─── Beep alert ───────────────────────────────────────────────
+function playBeepAlert() {
+  try {
+    const ctx2 = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.2, 0.4].forEach(delay => {
+      const osc = ctx2.createOscillator();
+      const gain = ctx2.createGain();
+      osc.connect(gain); gain.connect(ctx2.destination);
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.3, ctx2.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx2.currentTime + delay + 0.18);
+      osc.start(ctx2.currentTime + delay);
+      osc.stop(ctx2.currentTime + delay + 0.2);
+    });
+  } catch(e) {}
+
+  soundAlertEl.classList.add('visible');
+  setTimeout(() => soundAlertEl.classList.remove('visible'), 3000);
+}
+
+// ─── Intervention ─────────────────────────────────────────────
+function triggerIntervention() {
+  if (state.inIntervention) return;
+  state.inIntervention = true;
+  state.interventionCount++;
+  state.returnGazeTicks = 0;
+  returnBarFill.style.width = '0%';
+
+  interventionMsg.textContent = `You looked away for ${state.awaySeconds.toFixed(0)}s — take a moment.`;
+
+  if (state.videoURL) {
+    interventionVideo.style.display = 'block';
+    noVideoPlaceholder.style.display = 'none';
+    interventionVideo.src = state.videoURL;
+    interventionVideo.play().catch(() => {});
+  } else {
+    interventionVideo.style.display = 'none';
+    noVideoPlaceholder.style.display = 'flex';
+  }
+
+  showScreen('intervention');
+}
+
+function dismissIntervention() {
+  if (!state.inIntervention) return;
+  state.inIntervention = false;
+  state.awayStartTime = null;
+  state.awaySeconds = 0;
+  state.soundPlayed = false;
+  state.awayFrames = 0;
+  state.focusedFrames = 0;
+  state.returnGazeTicks = 0;
+  state.status = 'focused';
+
+  interventionVideo.pause();
+  interventionVideo.src = '';
+
+  showScreen('app');
+  updateStatusUI('focused');
+}
+
+// ─── Camera + MediaPipe loop ──────────────────────────────────
+let mpCamera;
+
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+      audio: false,
+    });
+    webcamEl.srcObject = stream;
+    await new Promise(resolve => { webcamEl.onloadedmetadata = resolve; });
+    await webcamEl.play();
+
+    // Size canvas to match
+    faceCanvas.width = webcamEl.videoWidth || 640;
+    faceCanvas.height = webcamEl.videoHeight || 480;
+
+    return true;
+  } catch (err) {
+    console.error('Camera error:', err);
+    document.getElementById('error-msg').textContent =
+      err.name === 'NotAllowedError'
+        ? 'Camera access was denied. Please allow camera access in your browser settings and reload.'
+        : `Camera error: ${err.message}. Please check your device and reload.`;
+    showScreen('error');
+    return false;
+  }
+}
+
+async function startApp() {
+  state.threshold = parseInt(thresholdSlider.value);
+  state.soundAlert = soundCheck.checked;
+  renderArticles();
+  showScreen('app');
+  initDetectionLoop();
+}
+
+let detectionInterval;
+
+function initDetectionLoop() {
+  if (!state.faceMeshReady) {
+    setTimeout(initDetectionLoop, 100);
+    return;
+  }
+
+  // Run MediaPipe at ~15fps for performance
+  let lastRun = 0;
+  const targetInterval = 66; // ~15fps
+
+  async function loop() {
+    const now = Date.now();
+    if (now - lastRun >= targetInterval) {
+      lastRun = now;
+      if (webcamEl.readyState >= 2 && !webcamEl.paused) {
+        try {
+          await faceMesh.send({ image: webcamEl });
+        } catch (e) {}
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+// ─── Boot ─────────────────────────────────────────────────────
+async function boot() {
+  showScreen('permission');
+
+  // Init MediaPipe
+  initFaceMesh();
+
+  // Request camera
+  const cameraOk = await startCamera();
+  if (!cameraOk) return;
+
+  // Show calibration
+  showScreen('calibration');
+}
+
+boot();
+</script>
+</body>
+</html>
