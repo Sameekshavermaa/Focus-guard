@@ -12,7 +12,7 @@
 
 ## 🚀 Live Demo
 
-**[▶ Try FocusGuard Live]
+**[▶ Try FocusGuard Live]**https://focus-guard-zeta.vercel.app/**
 
 ---
 
