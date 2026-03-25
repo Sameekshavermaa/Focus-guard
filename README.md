@@ -5,7 +5,7 @@
 ![FocusGuard](https://img.shields.io/badge/Status-Live-00ffe0?style=flat-square) ![HTML](https://img.shields.io/badge/Built%20With-HTML%20%2F%20CSS%20%2F%20JS-00ffe0?style=flat-square) ![MediaPipe](https://img.shields.io/badge/AI-MediaPipe%20Face%20Mesh-00ffe0?style=flat-square) ![License](https://img.shields.io/badge/License-MIT-00ffe0?style=flat-square)
 
 ![image alt](https://github.com/Sameekshavermaa/Focus-guard/blob/86318a61aa1d15e1b9a74a4752996bff0dad9219/11.png)
-![image alt](https://github.com/Sameekshavermaa/Focus-guard/blob/4f956ed333a15a44d0e46524bec6616766c40794/Screenshot%202026-03-22%20at%2016.12.27.png)
+![image alt](https://github.com/Sameekshavermaa/Focus-guard/blob/417df00344228e1243a1423b6d2b96f14ffda498/12.png)
 ![image alt](https://github.com/Sameekshavermaa/Focus-guard/blob/30d46f72631e8554b0c75565d510c960aaf69967/Screenshot%202026-03-22%20at%2016.12.42.png)
 
 ---
